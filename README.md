@@ -31,3 +31,25 @@ Outputs
   - `<input_stem>_extracted.tsv`
 - CSV with RFC 4180 quoting:
   - `<input_stem>_extracted.csv` (best for Excel/Sheets)
+
+Optional: Eluta.ca integration
+- During the run, you can opt-in to also fetch matching jobs from Eluta.ca using the same keywords. You can provide an optional location (e.g., `Toronto, ON`) and number of pages to fetch.
+- The external jobs are merged with deduplication before writing outputs.
+
+## Eluta.ca scraper (optional)
+
+You can fetch job listings directly from Eluta.ca and export them in the same
+formats as above.
+
+Usage
+- Run: `python eluta_cli.py`
+- Enter keywords (e.g., `software engineer`), optional location (e.g., `Toronto, ON`), and the number of pages to fetch.
+- Optionally filter out results with dead links (quick HTTP check).
+
+Outputs
+- Saved in the working directory as `eluta_<keywords>_extracted.*` with the same `.txt`/`.tsv`/`.csv`/`.md` variants.
+
+Notes
+- Be mindful of Eluta.ca’s Terms of Service and robots.txt when scraping.
+- HTML structures can change; if parsing breaks, update `eluta_scraper.py`.
+- Network access is required; behind strict networks the fetch may not work.
