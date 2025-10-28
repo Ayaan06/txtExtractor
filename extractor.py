@@ -1,6 +1,8 @@
 import re
 import html
 from pathlib import Path
+from urllib import request, error
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SUPPORTED_EXTENSIONS = {".txt", ".md"}
 
@@ -39,6 +41,19 @@ def prompt_keywords() -> list[str]:
             print("Please enter at least one keyword.")
             continue
         return keywords
+
+
+def prompt_yes_no(question: str, default: bool = False) -> bool:
+    prompt = " [Y/n]: " if default else " [y/N]: "
+    while True:
+        ans = input(question + prompt).strip().lower()
+        if not ans:
+            return default
+        if ans in {"y", "yes"}:
+            return True
+        if ans in {"n", "no"}:
+            return False
+        print("Please answer 'y' or 'n'.")
 
 
 def load_text(path: Path) -> str:
@@ -299,6 +314,60 @@ def _format_markdown_table(rows: list[tuple[str, str, str, str]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _is_url_alive(url: str, timeout: float = 4.0) -> bool:
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return False
+    headers = {"User-Agent": "txtExtractor/1.0"}
+    try:
+        req = request.Request(url, method="HEAD", headers=headers)
+        with request.urlopen(req, timeout=timeout) as resp:
+            code = getattr(resp, "status", 0) or getattr(resp, "code", 0)
+            if 200 <= code < 400:
+                return True
+    except error.HTTPError as e:
+        if e.code == 405:
+            pass
+        elif 200 <= e.code < 400:
+            return True
+        else:
+            return False
+    except Exception:
+        pass
+
+    try:
+        headers2 = dict(headers)
+        headers2["Range"] = "bytes=0-0"
+        req = request.Request(url, method="GET", headers=headers2)
+        with request.urlopen(req, timeout=timeout) as resp:
+            code = getattr(resp, "status", 0) or getattr(resp, "code", 0)
+            if 200 <= code < 400:
+                return True
+    except error.HTTPError as e:
+        if e.code in (200, 206, 301, 302, 303, 307, 308, 416):
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _filter_rows_by_live_links(rows: list[tuple[str, str, str, str]], timeout: float = 4.0, max_workers: int = 10) -> list[tuple[str, str, str, str]]:
+    if not rows:
+        return rows
+    idx_to_keep: set[int] = set()
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_is_url_alive, url, timeout): i for i, (_, _, _, url) in enumerate(rows)}
+        for fut in as_completed(futures):
+            i = futures[fut]
+            ok = False
+            try:
+                ok = fut.result()
+            except Exception:
+                ok = False
+            if ok:
+                idx_to_keep.add(i)
+    return [row for i, row in enumerate(rows) if i in idx_to_keep]
+
+
 def main() -> None:
     print("Welcome to txtExtractor!")
     file_path = prompt_file_path()
@@ -315,8 +384,20 @@ def main() -> None:
         print("No text content found in the file.")
         return
 
-    # Build row data and render in both TSV and CSV
+    # Build row data
     rows = _extract_rows_from_html(text, keywords)
+
+    # Optionally filter out dead links (HTTP check). This may take a few seconds.
+    if rows and prompt_yes_no("Filter out jobs with dead links?", default=False):
+        try:
+            before = len(rows)
+            rows = _filter_rows_by_live_links(rows)
+            removed = before - len(rows)
+            print(f"Filtered {removed} dead-link job(s).")
+        except Exception as exc:
+            print(f"Link filtering skipped due to error: {exc}")
+
+    # Render outputs in multiple formats
     tsv_text = _format_tsv(rows)
     csv_text = _format_csv(rows)
     pretty_text = _format_pretty_table(rows)
