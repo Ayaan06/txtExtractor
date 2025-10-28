@@ -4,7 +4,7 @@
 plain-text (`.txt`) files for user-specified keywords and writes a clean,
 organized table of matches to a `.txt` file next to the source file.
 
-## Usage
+## File Extractor (local .md/.txt)
 
 1. Run the script:
 
@@ -32,14 +32,11 @@ Outputs
 - CSV with RFC 4180 quoting:
   - `<input_stem>_extracted.csv` (best for Excel/Sheets)
 
-Optional: Eluta.ca integration
-- During the run, you can opt-in to also fetch matching jobs from Eluta.ca using the same keywords. You can provide an optional location (e.g., `Toronto, ON`) and number of pages to fetch.
-- The external jobs are merged with deduplication before writing outputs.
+Note: This tool only reads a local `.md`/`.txt` file. For scraping Eluta.ca, use the separate tool below.
 
-## Eluta.ca scraper (optional)
+## Eluta.ca Scraper (separate tool)
 
-You can fetch job listings directly from Eluta.ca and export them in the same
-formats as above.
+Fetch job listings directly from Eluta.ca and export in the same formats.
 
 Usage
 - Run: `python eluta_cli.py`
@@ -47,9 +44,9 @@ Usage
 - Optionally filter out results with dead links (quick HTTP check).
 
 Outputs
-- Saved in the working directory as `eluta_<keywords>_extracted.*` with the same `.txt`/`.tsv`/`.csv`/`.md` variants.
+- Saved in the working directory as `eluta_<keywords>_extracted.*` with `.txt`/`.tsv`/`.csv`/`.md` variants.
 
 Notes
-- Be mindful of Eluta.ca’s Terms of Service and robots.txt when scraping.
-- HTML structures can change; if parsing breaks, update `eluta_scraper.py`.
-- Network access is required; behind strict networks the fetch may not work.
+- Respect Eluta.ca’s Terms of Service and robots.txt.
+- Network access is required. If you’re behind a proxy or VPN and see TLS/SSL errors, configure `HTTPS_PROXY`/`HTTP_PROXY` env vars or run without the dead-link filter.
+- If Eluta changes their HTML, update `eluta_scraper.py`.

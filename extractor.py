@@ -398,30 +398,8 @@ def main() -> None:
     # Build row data from provided file
     rows = _extract_rows_from_html(text, keywords)
 
-    # Optionally augment with live results from Eluta.ca
-    if prompt_yes_no("Also fetch jobs from Eluta.ca using these keywords?", default=False):
-        try:
-            # Import here to avoid hard dependency if user doesn't need scraping
-            from eluta_scraper import jobs_to_rows, search_eluta  # type: ignore
-
-            eluta_query = " ".join(keywords)
-            location = input("Enter location for Eluta (e.g., 'Toronto, ON') [optional]: ").strip()
-            pages_raw = input("How many Eluta pages to fetch? [1]: ").strip() or "1"
-            try:
-                pages = max(1, int(pages_raw))
-            except ValueError:
-                pages = 1
-
-            print("Fetching from Eluta.ca...")
-            jobs = search_eluta(query=eluta_query, location=location or None, pages=pages, raise_on_error=True)
-            eluta_rows = jobs_to_rows(jobs)
-            before = len(rows)
-            rows.extend(eluta_rows)
-            rows = _dedupe_rows(rows)
-            added = len(rows) - before
-            print(f"Eluta: added {added} job(s).")
-        except Exception as exc:
-            print(f"Eluta fetch skipped due to error: {exc}")
+    # This tool only parses the provided .md/.txt file. For Eluta.ca scraping,
+    # use the separate script: eluta_cli.py
 
     # Optionally filter out dead links (HTTP check). This may take a few seconds.
     if rows and prompt_yes_no("Filter out jobs with dead links?", default=False):
