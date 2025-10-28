@@ -186,12 +186,17 @@ def _extract_td_cells(html_text: str) -> list[tuple[str, str | None]]:
     return cells
 
 
-def _extract_rows_from_html(full_text: str, keywords: list[str]) -> list[tuple[str, str, str, str]]:
-    """Return a list of (Company, Role, Location, Link) rows filtered by keywords."""
+def format_results(file_path: Path, keywords: list[str], sentences: list[str], full_text: str) -> str:
+    """Create a TSV with Company, Role, Location, Link from <td> neighbors.
+
+    For each <td> whose text contains any keyword, take:
+      company = td[i-2], role = td[i-1], location = td[i], link = href in td[i+1]
+    Skips incomplete rows and de-duplicates identical lines.
+    """
     cells = _extract_td_cells(full_text)
     kl = [k.lower() for k in keywords if k]
+    lines: list[str] = ["Company\tRole\tLocation\tLink"]
     seen: set[tuple[str, str, str, str]] = set()
-    rows: list[tuple[str, str, str, str]] = []
 
     for i, (text_plain, _) in enumerate(cells):
         lower = text_plain.lower()
@@ -200,102 +205,32 @@ def _extract_rows_from_html(full_text: str, keywords: list[str]) -> list[tuple[s
         # Ensure neighbors exist
         if i - 2 < 0 or i + 1 >= len(cells):
             continue
-        company = _strip_markdown_inline(cells[i - 2][0]) or "-"
-        role = _strip_markdown_inline(cells[i - 1][0]) or "-"
-        location = _strip_markdown_inline(text_plain) or "-"
-        link_raw = cells[i + 1][1] or cells[i + 1][0]
-        link = (link_raw or "-").strip()
-        key = (company, role, location, link)
-        if key in seen:
+        company = cells[i - 2][0]
+        role = cells[i - 1][0]
+        location = text_plain
+        link = cells[i + 1][1] or cells[i + 1][0]
+
+        # Clean final fields further (remove leftover pipes, md, commas spacing)
+        def clean(s: str) -> str:
+            s = _strip_markdown_inline(s)
+            return s
+
+        c = clean(company) or "-"
+        r = clean(role) or "-"
+        l = clean(location) or "-"
+        u = (link or "-").strip()
+        row_key = (c, r, l, u)
+        if row_key in seen:
             continue
-        seen.add(key)
-        rows.append(key)
-    return rows
-
-
-def _format_tsv(rows: list[tuple[str, str, str, str]]) -> str:
-    lines = ["Company\tRole\tLocation\tLink"]
-    for c, r, l, u in rows:
+        seen.add(row_key)
         lines.append(f"{c}\t{r}\t{l}\t{u}")
+
+    # If nothing matched, fall back to previous 3-col parsing for resilience
     if len(lines) == 1:
-        lines.append("-")
-    return "\n".join(lines).rstrip() + "\n"
+        fallback = _entries_to_table([], keywords)  # will produce header + '-' by default
+        # replace header to 4 columns for consistency
+        lines = ["Company\tRole\tLocation\tLink", "-"]
 
-
-def _format_csv(rows: list[tuple[str, str, str, str]]) -> str:
-    def q(s: str) -> str:
-        if any(ch in s for ch in [',', '"', '\n', '\r']):
-            return '"' + s.replace('"', '""') + '"'
-        return s
-    lines = ["Company,Role,Location,Link"]
-    for c, r, l, u in rows:
-        lines.append(
-            ",".join([q(c), q(r), q(l), q(u)])
-        )
-    if len(lines) == 1:
-        lines.append("-")
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def format_results(file_path: Path, keywords: list[str], sentences: list[str], full_text: str) -> str:
-    """Create TSV output; CSV is generated separately in main."""
-    rows = _extract_rows_from_html(full_text, keywords)
-    return _format_tsv(rows)
-
-
-def _format_pretty_table(rows: list[tuple[str, str, str, str]]) -> str:
-    """Return a visually aligned plain-text table for easy reading.
-
-    Uses fixed-width columns for Company/Role/Location with soft caps and
-    ellipsis for very long values. Link is left as-is following two spaces.
-    """
-    header = ("Company", "Role", "Location", "Link")
-    data = [header] + rows
-
-    # Compute widths with caps to avoid extreme stretching
-    def width(col: int, cap: int) -> int:
-        return min(max(len(str(r[col])) for r in data), cap)
-
-    w_company = max(8, width(0, 36))
-    w_role = max(8, width(1, 48))
-    w_location = max(8, width(2, 28))
-
-    def crop(s: str, w: int) -> str:
-        s = s.replace("\n", " ").replace("\r", " ")
-        return (s[: w - 1] + "…") if len(s) > w else s
-
-    def fmt_row(c: str, r: str, l: str, u: str) -> str:
-        c2 = crop(c, w_company).ljust(w_company)
-        r2 = crop(r, w_role).ljust(w_role)
-        l2 = crop(l, w_location).ljust(w_location)
-        return f"{c2}  {r2}  {l2}  {u}"
-
-    lines: list[str] = []
-    lines.append(fmt_row(*header))
-    lines.append("-" * (w_company + w_role + w_location + 6 + 10))
-    for c, r, l, u in rows:
-        lines.append(fmt_row(c, r, l, u))
-        lines.append("")  # extra space between jobs
-    if len(rows) == 0:
-        lines.append("-")
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _format_markdown_table(rows: list[tuple[str, str, str, str]]) -> str:
-    """Return a Markdown table with clickable links in the last column."""
-    def esc(cell: str) -> str:
-        # Minimal escaping for pipes
-        return cell.replace("|", "\\|").replace("\n", " ")
-
-    lines: list[str] = []
-    lines.append("| Company | Role | Location | Link |")
-    lines.append("|---|---|---|---|")
-    if not rows:
-        lines.append("| - | - | - | - |")
-    else:
-        for c, r, l, u in rows:
-            link_cell = f"[Open]({u})" if u and u != "-" else "-"
-            lines.append(f"| {esc(c)} | {esc(r)} | {esc(l)} | {link_cell} |")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -315,39 +250,21 @@ def main() -> None:
         print("No text content found in the file.")
         return
 
-    # Build row data and render in both TSV and CSV
-    rows = _extract_rows_from_html(text, keywords)
-    tsv_text = _format_tsv(rows)
-    csv_text = _format_csv(rows)
-    pretty_text = _format_pretty_table(rows)
-    md_text = _format_markdown_table(rows)
+    # Format results once for both console and file output
+    result_text = format_results(file_path, keywords, sentences, text)
 
-    # Print a quick preview header + first few rows for neatness
-    preview_lines = pretty_text.splitlines()
-    preview = "\n".join(preview_lines[: min(6, len(preview_lines))])
-    print("\n" + preview)
+    # Print to terminal
+    print("\n" + result_text)
 
-    # Write files next to the source file
-    base = file_path.with_name(file_path.stem + "_extracted")
-    paths = {
-        "txt": base.with_suffix(".txt"),  # TSV in .txt for convenience
-        "tsv": base.with_suffix(".tsv"),
-        "csv": base.with_suffix(".csv"),
-        "md": base.with_suffix(".md"),
-    }
+    # Also write to a .txt file alongside the source file
+    out_path = file_path.with_name(file_path.stem + "_extracted.txt")
     try:
-        # .txt gets the pretty-aligned layout; .tsv is strict tab-separated
-        paths["txt"].write_text(pretty_text, encoding="utf-8")
-        paths["tsv"].write_text(tsv_text, encoding="utf-8")
-        paths["csv"].write_text(csv_text, encoding="utf-8")
-        paths["md"].write_text(md_text, encoding="utf-8")
-        print(f"Saved: {paths['txt']}")
-        print(f"Saved: {paths['tsv']}")
-        print(f"Saved: {paths['csv']}")
-        print(f"Saved: {paths['md']}")
+        out_path.write_text(result_text, encoding="utf-8")
+        print(f"Results saved to: {out_path}")
     except OSError as exc:
-        print(f"Failed to write outputs: {exc}")
+        print(f"Failed to write results to {out_path}: {exc}")
 
 
 if __name__ == "__main__":
     main()
+

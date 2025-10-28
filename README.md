@@ -1,8 +1,8 @@
 # txtExtractor
 
 `txtExtractor` is a simple command-line tool that searches Markdown (`.md`) or
-plain-text (`.txt`) files for user-specified keywords and prints the sentences
-that contain them.
+plain-text (`.txt`) files for user-specified keywords and writes a clean,
+organized table of matches to a `.txt` file next to the source file.
 
 ## Usage
 
@@ -17,5 +17,17 @@ that contain them.
 3. Enter one or more keywords separated by commas. The search is
    case-insensitive.
 
-The tool will list each keyword alongside the sentences where it appears. If a
-keyword does not appear in the file, the script will let you know.
+The saved results are clean tables with four columns:
+
+Company	Role	Location	Link
+
+Only entries that match your keywords are included. Common Markdown formatting
+is stripped from the values (links, images, inline code, HTML tags).
+
+Outputs
+- Pretty-aligned text for easy reading:
+  - `<input_stem>_extracted.txt` (fixed-width columns, capped with ellipsis)
+- TSV (tabs) for data interchange:
+  - `<input_stem>_extracted.tsv`
+- CSV with RFC 4180 quoting:
+  - `<input_stem>_extracted.csv` (best for Excel/Sheets)
